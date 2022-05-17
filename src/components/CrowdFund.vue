@@ -63,7 +63,9 @@ export default {
       joined: false,
       endDate: "null",
       isAuthor: true,
-
+      crowdFund: null,
+      account: "0xDE445dE807f09AeA1DaBE9d962939A01312dF63a",
+      contractAddress: "0x5031Ba82B13A37aafAbB0bdbCeF57Cd1b826c953",
       joinList: [],
     }
   },
@@ -73,7 +75,7 @@ export default {
     await this.initWeb3Account()
     await this.initContract()
     await this.getCrowdInfo()
-    this.getJoins()
+    // this.getJoins()
   },
 
   methods: {
@@ -90,75 +92,102 @@ export default {
       } else if (window.web3) {
         this.provider = window.web3.currentProvider;
       } else {
-        this.provider = new Web3.providers.HttpProvider("http://127.0.0.1:7545");
+        this.provider = new Web3.providers.HttpProvider("https://matic-mumbai.chainstacklabs.com");
+        // this.provider = new Web3.providers.HttpProvider("http://127.0.0.1:8545");
       }
       this.web3 = new Web3(this.provider);
 
       this.web3.eth.getAccounts().then(accs  => {
         this.account = accs[0]
       })
+
+      this.crowdFund = new this.web3.eth.Contract(contract(crowd).abi, this.contractAddress, {from: this.account})
+      
     },
 
     //  初始化合约实例
     async initContract() {
-      const crowdContract = contract(crowd)
-      crowdContract.setProvider(this.provider)
-      this.crowdFund = await crowdContract.deployed()
+      // const crowdContract = contract(crowd)
+      // crowdContract.setProvider(this.provider)
+      // this.crowdFund = await crowdContract.deployed()
     },
 
     // 获取合约的状态信息
     async getCrowdInfo() {
-
+      console.log( {"crowdFund":this.crowdFund,"this.account":this.account,"joined":this.crowdFund.methods.joined(this.account)})
       // 获取合约的余额
-      this.web3.eth.getBalance(this.crowdFund.address).then(
+      this.web3.eth.getBalance(this.crowdFund._address).then(
         r => {
           this.total = this.web3.utils.fromWei(r)
         }
       )
 
       // 获取读者的参与金额， joined 在合约中是public 的状态变量，自动生成相应的访问器函数
-      this.crowdFund.joined(this.account).then(
-        r => {
-          if (r > 0) {
+      this.crowdFund.methods.joined(this.account).call(
+       {gas: 1000000}, (error, result) => {
+          console.log("call joined() result", result)
+          if (result > 0) {
             this.joined = true
-            this.joinPrice = this.web3.utils.fromWei(r)
+            this.joinPrice = this.web3.utils.fromWei(result)
           }
         }
-      )
+      ).catch((err) => {
+          console.log("call joined() err",err)
+      });
 
      // 获取合约的关闭状态
-      this.crowdFund.closed().then(
-        r => this.closed = r
-      )
+      this.crowdFund.methods.closed().call(
+        (error, result) => {
+          console.log("call closed() result", result)
+          this.closed = result
+        }
+      ).catch((err) => {
+          console.log("call closed() err",err)
+      });
 
       // 获取当前的众筹价格
-      this.crowdFund.price().then(
-        r => this.price = this.web3.utils.fromWei(r)
-      )
-
+      this.crowdFund.methods.price().call(
+        (error, result) => {
+          console.log("call price() result", result)
+          this.price = this.web3.utils.fromWei(result)
+        }
+      ).catch((err) => {
+          console.log("call price() err", err)
+      });
+    
       // 获取众筹截止时间
-      this.crowdFund.endTime().then(r => {
-        var endTime = new Date(r * 1000)
-        // 把时间戳转化为本地时间
-        this.endDate = endTime.toLocaleDateString().replace(/\//g, "-") + " " + endTime.toTimeString().substr(0, 8);
-      })
+      this.crowdFund.methods.endTime().call(
+        (error, result) => {
+          console.log("call endTime() result", result)
+          var endTime = new Date(result * 1000)
+          // 把时间戳转化为本地时间
+          this.endDate = endTime.toLocaleDateString().replace(/\//g, "-") + " " + endTime.toTimeString().substr(0, 8);
+        }
+      ).catch((err) => {
+          console.log("call endTime() err", err)
+            // console.log('asyncSafeTransferFrom() catch Promise err',err)
+      });
 
       // 获取众筹创作者地址
-      this.crowdFund.author().then(r => {
-        if (this.account == r) {
-          this.isAuthor = true
-        } else {
-          this.isAuthor = false
+      this.crowdFund.methods.author().call(
+        (error, result) => {
+          console.log("call author() result", result)
+          if (this.account == result) {
+            this.isAuthor = true
+          } else {
+            this.isAuthor = false
+          }
         }
-      })
-
+      ).catch((err) => {
+          console.log("call author() err", err)
+      });
     },
 
     // 读者点击参与众筹时调用
     join() {
       this.web3.eth.sendTransaction({
         from: this.account,
-        to: this.crowdFund.address,
+        to: this.crowdFund._address,
         value: this.web3.utils.toWei(this.price)
       }).then(() =>
         this.getCrowdInfo()
@@ -166,7 +195,7 @@ export default {
     },
 
     withdraw() {
-      this.crowdFund.withdraw({
+      this.crowdFund.methods.withdraw({
         from: this.account
       }).then(() => {
         this.getCrowdInfo()
@@ -174,7 +203,7 @@ export default {
     },
 
     withdrawFund() {
-      this.crowdFund.withdrawFund({
+      this.crowdFund.methods.withdrawFund({
         from: this.account
       }).then(() => {
         this.getCrowdInfo()
